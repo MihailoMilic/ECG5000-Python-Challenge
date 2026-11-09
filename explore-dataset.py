@@ -1,8 +1,11 @@
 import numpy as np
 import polars as pl
 
+from data_loader import load_training_data
+
+
 def main():
-    data = np.loadtxt("ECG5000/ECG5000_TRAIN.txt")
+    data = load_training_data()
 
     df = pl.DataFrame(
         data,
