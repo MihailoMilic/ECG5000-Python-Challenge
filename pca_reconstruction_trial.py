@@ -12,6 +12,8 @@ from sklearn.metrics import (
     roc_auc_score
 )
 
+# Data preparation same as in explore_dataset_trial.ipynb
+
 data_train = np.loadtxt("ECG5000/ECG5000_TRAIN.txt")
 data_test = np.loadtxt("ECG5000/ECG5000_TEST.txt")
 
@@ -27,6 +29,8 @@ signals_by_class = {
     for label in labels
 }
 
+# Partition the dataset into normal and abnormal classes
+
 df_train["binary_label"] = (df_train["class"] != 1).astype(int)
 
 df_normal = df_train[df_train["binary_label"] == 0]
@@ -35,9 +39,6 @@ df_abnormal = df_train[df_train["binary_label"] == 1]
 X_normal = df_normal.iloc[:, 1:-1].values
 X_abnormal = df_abnormal.iloc[:, 1:-1].values
 
-pca = PCA()
-pca.fit(X_normal)
-
 df_test["binary_label"] = (df_test["class"] != 1).astype(int)
 
 df_test_normal = df_test[df_test["binary_label"] == 0]
@@ -45,6 +46,11 @@ df_test_abnormal = df_test[df_test["binary_label"] == 1]
 
 X_test_normal = df_test_normal.iloc[:, 1:-1].values
 X_test_abnormal = df_test_abnormal.iloc[:, 1:-1].values
+
+# Fit PCA on the normal training data and visualize the explained variance and principal components
+
+pca = PCA()
+pca.fit(X_normal)
 
 plt.figure(figsize=(8, 4))
 plt.plot(np.cumsum(pca.explained_variance_ratio_[:21]), marker="o", linestyle="-", color="b")
@@ -70,28 +76,30 @@ for i, ax in enumerate(axes):
 plt.tight_layout()
 plt.show()
 
-n=4
+# Reconstruct the signals using the first n principal components and visualize the original and reconstructed signals
 
-X_train_projected_normal = pca.transform(X_normal)[:, :n]
+n_relevant_components = 4
+
+X_train_projected_normal = pca.transform(X_normal)[:, :n_relevant_components]
 X_train_reconstructed_normal = pca.inverse_transform(
-    np.pad(X_train_projected_normal, ((0, 0), (0, pca.n_components_ - n)))
+    np.pad(X_train_projected_normal, ((0, 0), (0, pca.n_components_ - n_relevant_components)))
 )
 
-X_test_projected_normal = pca.transform(X_test_normal)[:, :n]
+X_test_projected_normal = pca.transform(X_test_normal)[:, :n_relevant_components]
 X_test_reconstructed_normal = pca.inverse_transform(
-    np.pad(X_test_projected_normal, ((0, 0), (0, pca.n_components_ - n)))
+    np.pad(X_test_projected_normal, ((0, 0), (0, pca.n_components_ - n_relevant_components)))
 )
 
-X_test_projected_abnormal = pca.transform(X_test_abnormal)[:, :n]
+X_test_projected_abnormal = pca.transform(X_test_abnormal)[:, :n_relevant_components]
 X_test_reconstructed_abnormal = pca.inverse_transform(
-    np.pad(X_test_projected_abnormal, ((0, 0), (0, pca.n_components_ - n)))
+    np.pad(X_test_projected_abnormal, ((0, 0), (0, pca.n_components_ - n_relevant_components)))
 )
 
-n = 5
+n_shown_components = 5
 
-fig, axes = plt.subplots(n, 3, figsize=(14, 2.5 * n), sharex=True)
+fig, axes = plt.subplots(n_shown_components, 3, figsize=(14, 2.5 * n_shown_components), sharex=True)
 
-for i in range(n):
+for i in range(n_shown_components):
     axes[i, 0].plot(X_normal[i], label="Original")
     axes[i, 0].plot(X_train_reconstructed_normal[i], label="Reconstructed", linestyle="--")
     axes[i, 0].set_title(f"Normal heartbeat {i+1}")
@@ -113,19 +121,14 @@ for i in range(n):
 plt.tight_layout()
 plt.show()
 
+# Calculate the reconstruction errors for normal and abnormal signals and visualize their distributions
+
 normal_training_errors = np.mean((X_normal - X_train_reconstructed_normal)**2, axis=1)
 normal_errors = np.mean((X_test_normal - X_test_reconstructed_normal)**2, axis=1)
 abnormal_errors = np.mean((X_test_abnormal - X_test_reconstructed_abnormal)**2, axis=1)
 
-print("Mean normal training error:", normal_training_errors.mean())
-print("Mean normal reconstruction error:", normal_errors.mean())
-print("Mean abnormal reconstruction error:", abnormal_errors.mean())
-
 threshold_95 = np.percentile(normal_training_errors, 95)
 threshold_99 = np.percentile(normal_training_errors, 99)
-
-print("95th percentile:", threshold_95)
-print("99th percentile:", threshold_99)
 
 plt.figure(figsize=(10, 5))
 
@@ -150,6 +153,8 @@ plt.title("PCA Reconstruction Error Distributions")
 plt.legend()
 plt.grid(alpha=0.3)
 plt.show()
+
+# Choose 95th percentile as the threshold for classification and evaluate the model's performance
 
 y_true = np.concatenate([
     np.zeros(len(normal_errors)),
@@ -186,19 +191,18 @@ print(classification_report(
     zero_division=0
 ))
 
-# Identify misclassified observations
+# Visualize missclassified signals (false positives and false negatives) along with their reconstruction errors
+
 false_positives = np.where((y_true == 0) & (y_pred == 1))[0]
 false_negatives = np.where((y_true == 1) & (y_pred == 0))[0]
 
-# Separate indices for normal and abnormal test observations
 fp_indices = false_positives
 fn_indices = false_negatives - len(normal_errors)
 
-n = 4
-fig, axes = plt.subplots(2, n, figsize=(14, 7), sharey=True)
+n_reconstructions = 4
+fig, axes = plt.subplots(2, n_reconstructions, figsize=(14, 7), sharey=True)
 
-for i in range(n):
-    # False positives: normal signals classified as abnormal
+for i in range(n_reconstructions):
     if i < len(fp_indices):
         idx = fp_indices[i]
 
@@ -207,7 +211,6 @@ for i in range(n):
                         label="Reconstructed", linestyle="--")
         axes[0, i].set_title(f"False Positive\nMSE={normal_errors[idx]:.4f}")
 
-    # False negatives: abnormal signals classified as normal
     if i < len(fn_indices):
         idx = fn_indices[i]
 
@@ -229,4 +232,4 @@ plt.suptitle(f"PCA Misclassifications (Threshold = {threshold_95:.4f})")
 plt.tight_layout()
 plt.show()
 
-# Lets look at how subclasses perform
+# Lets look at how subclasses perform where does the reconstruction error come from for each subclass
